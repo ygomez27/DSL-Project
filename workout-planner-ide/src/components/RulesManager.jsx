@@ -121,7 +121,7 @@ const RulesManager = ({ section }) => {
             onChange={(e) => setSelectedExercise(e.target.value)}
             className="action-input"
           >
-            <option value="">Select Exercise</option>
+            <option value="" hidden>Select Exercise</option>
             {grammarOptions.exercise_names.map((ex, i) => (
               <option key={`ex-${i}`} value={ex}>{ex}</option>
             ))}
@@ -183,7 +183,7 @@ const RulesManager = ({ section }) => {
               onChange={(e) => setSelectedVariable(e.target.value)}
               className="variable-select"
             >
-              <option value="">Select Variable*</option>
+              <option value="" hidden>Select Variable*</option>
               {grammarOptions.variables.map((v, i) => (
                 <option key={`var-${i}`} value={v}>{v}</option>
               ))}
@@ -194,7 +194,7 @@ const RulesManager = ({ section }) => {
               onChange={(e) => setSelectedOperator(e.target.value)}
               className="operator-select"
             >
-              <option value="">Select Operator*</option>
+              <option value="" hidden>Select Operator*</option>
               {grammarOptions.operators.map((op, i) => (
                 <option key={`op-${i}`} value={op}>{op}</option>
               ))}
@@ -206,7 +206,7 @@ const RulesManager = ({ section }) => {
               className="value-select"
               disabled={!selectedVariable}
             >
-              <option value="">Select Value*</option>
+              <option value="" hidden>Select Value*</option>
               {getValueOptions().map((val, i) => (
                 <option key={`val-${i}`} value={val}>{val}</option>
               ))}
@@ -227,7 +227,7 @@ const RulesManager = ({ section }) => {
               }}
               className="action-select"
             >
-              <option value="">Select Action*</option>
+              <option value="" hidden>Select Action*</option>
               {grammarOptions.actions.map((action, i) => (
                 <option key={`act-${i}`} value={action}>{action.replace('_', ' ')}</option>
               ))}
