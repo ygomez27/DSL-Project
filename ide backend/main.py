@@ -31,7 +31,6 @@ mysql = MySQL(app)
 
 # DSL Grammar Definition
 DSL_GRAMMAR = """
-
 Program:
     (workout_definitions+=WorkoutDefinition | rule_definitions+=RuleDefinition)*
 ;
@@ -115,7 +114,15 @@ ConditionExpr:
 ;
 
 Variable:
+    SimpleVariable | RecordVariable
+;
+
+SimpleVariable:
     "muscle_group" | "goal" | "duration" | "age" | "fitness_level"
+;
+
+RecordVariable:
+    record_type=ID '.' field=ID
 ;
 
 Operator:
@@ -208,6 +215,7 @@ def get_valid_values(table_name):
         return []
 
 
+# Endpoints
 @app.route('/init-db', methods=['POST'])
 def initialize_db():
     default_data = {
@@ -229,7 +237,7 @@ def initialize_db():
                     try:
                         cur.execute(f"INSERT INTO {table} (name) VALUES (%s)", (value,))
                     except IntegrityError:
-                        pass  # Ignore duplicates
+                        pass
             return jsonify({"status": "success", "message": "Database initialized"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -254,20 +262,33 @@ def get_valid_levels():
 # Endpoints
 @app.route('/analyze-grammar', methods=['GET'])
 def analyze_grammar():
-    """Endpoint to get grammar options for the frontend"""
     try:
+        with get_cursor() as cur:
+            # Get simple variables
+            simple_vars = ["muscle_group", "goal", "duration", "age", "fitness_level"]
+
+            # Get record variables
+            cur.execute("""
+                SELECT rt.name as record_type, a.name as field
+                FROM record_types rt
+                JOIN attributes a ON rt.id = a.record_type_id
+            """)
+            record_vars = [f"{row['record_type']}.{row['field']}" for row in cur.fetchall()]
+
+            # Combine variables
+            all_vars = simple_vars + record_vars
+
         return jsonify({
-            "variables": ["muscle_group", "goal", "duration", "age", "fitness_level"],
+            "variables": all_vars,
             "operators": ["==", "!=", "<", ">", "<=", ">="],
             "actions": ["include_exercise", "sets", "set_rest_time"],
-            "exercise_names": get_valid_exercises(),
-            "goal_types": get_valid_goals(),
-            "levels": get_valid_levels(),
-            "muscles": get_valid_muscles(),
+            "exercise_names": get_valid_values('valid_exercises'),
+            "goal_types": get_valid_values('valid_goals'),
+            "levels": get_valid_values('valid_levels'),
+            "muscles": get_valid_values('valid_muscles'),
             "customizable_sr": True
         })
     except Exception as e:
-        app.logger.error(f"Grammar analysis error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -314,14 +335,8 @@ def add_rule():
             }), 400
 
         try:
-            # Add debug logging for the raw rule text
-            app.logger.debug(f"Raw rule text received: {rule_text}")
             model = metamodel.model_from_str(rule_text)
             rule_def = model.rule_definitions[0]
-
-            # Debug log the parsed action
-            app.logger.debug(f"Parsed action type: {type(rule_def.action)}")
-            app.logger.debug(f"Action details: {vars(rule_def.action)}")
 
         except TextXSyntaxError as e:
             error_msg = f"Syntax error: {e.message}"
@@ -339,23 +354,32 @@ def add_rule():
             cur.execute("INSERT INTO rules (name) VALUES (%s)", (rule_name,))
             rule_id = cur.lastrowid
 
-            # Insert conditions
+            # Insert conditions with proper variable formatting
             for cond in rule_def.condition.conditions:
+                # Handle RecordVariable objects
+                try:
+                    # Check if this is a RecordVariable from textX
+                    variable_str = f"{cond.variable.record_type}.{cond.variable.field}"
+                except AttributeError:
+                    # Regular variable
+                    variable_str = str(cond.variable)
+
                 value = cond.value
                 if isinstance(value, str):
                     value = value.strip('"')
+
                 cur.execute("""
                     INSERT INTO conditions 
                     (rule_id, variable, operator, value)
                     VALUES (%s, %s, %s, %s)
-                """, (rule_id, cond.variable, cond.operator, str(value)))
+                """, (rule_id, variable_str, cond.operator, str(value)))
 
-            # Process actions with explicit validation
+            # Process actions
             action = rule_def.action
             action_type = None
 
-            if hasattr(action, 'exercise'):  # ExerciseAction
-                exercise_name = action.exercise.strip('"')  # Remove quotes
+            if hasattr(action, 'exercise'):
+                exercise_name = action.exercise.strip('"')
                 if exercise_name not in get_valid_exercises():
                     return jsonify({
                         "status": "invalid",
@@ -370,7 +394,7 @@ def add_rule():
                 """, (rule_id, 'include_exercise', exercise_name))
                 action_type = 'exercise'
 
-            elif hasattr(action, 'sets_count') and hasattr(action, 'reps_count'):  # SetsRepsAction
+            elif hasattr(action, 'sets_count') and hasattr(action, 'reps_count'):
                 if not (1 <= action.sets_count <= 10):
                     return jsonify({
                         "status": "invalid",
@@ -390,15 +414,15 @@ def add_rule():
                 """, (rule_id, 'sets_reps', action.sets_count, action.reps_count))
                 action_type = 'sets_reps'
 
-            elif hasattr(action, 'min_time') and hasattr(action, 'max_time'):  # RestTimeAction
+            elif hasattr(action, 'min_time') and hasattr(action, 'max_time'):
                 min_seconds = action.min_time.minutes * 60
                 max_seconds = action.max_time.minutes * 60
 
                 cur.execute("""
-                                    INSERT INTO actions 
-                                    (rule_id, action_type, min_rest_time, max_rest_time)
-                                    VALUES (%s, %s, %s, %s)
-                                """, (rule_id, 'rest_time', min_seconds, max_seconds))
+                    INSERT INTO actions 
+                    (rule_id, action_type, min_rest_time, max_rest_time)
+                    VALUES (%s, %s, %s, %s)
+                """, (rule_id, 'rest_time', min_seconds, max_seconds))
                 action_type = 'rest_time'
 
             else:
@@ -408,7 +432,6 @@ def add_rule():
                     "valid_actions": ["include_exercise", "sets X reps Y"]
                 }), 400
 
-            # Return complete rule details
             rule_data = serialize_rule(rule_id)
             return jsonify({
                 "status": "success",
@@ -449,39 +472,45 @@ def validate_rule():
 
             rule_def = model.rule_definitions[0]
 
-            # Serialize the rule definition properly
+            with get_cursor() as cur:
+                valid_vars = ["muscle_group", "goal", "duration", "age", "fitness_level"]
+                cur.execute("""
+                    SELECT rt.name as record_type, a.name as field
+                    FROM record_types rt
+                    JOIN attributes a ON rt.id = a.record_type_id
+                """)
+                record_vars = [f"{row['record_type']}.{row['field']}" for row in cur.fetchall()]
+                all_valid_vars = valid_vars + record_vars
+
             serialized_rule = {
                 "name": f"Rule {rule_def.name.number}",
                 "conditions": [],
                 "action": {}
             }
 
-            # Validate all conditions
             for cond in rule_def.condition.conditions:
-                variable = cond.variable
+                try:
+                    var_str = f"{cond.variable.record_type}.{cond.variable.field}"
+                except AttributeError:
+                    var_str = str(cond.variable)
+
                 operator = cond.operator
                 value = cond.value
-
-                # Convert value to string for validation
                 str_value = str(value) if hasattr(value, '__str__') else value
 
-                # Store condition for response
                 condition_data = {
-                    "variable": variable,
+                    "variable": var_str,
                     "operator": operator,
                     "value": str_value
                 }
                 serialized_rule["conditions"].append(condition_data)
 
-                # Validate variable
-                valid_vars = ["muscle_group", "goal", "duration", "age", "fitness_level"]
-                if variable not in valid_vars:
+                if var_str not in all_valid_vars:
                     return jsonify({
                         "status": "invalid",
-                        "message": f"Invalid variable: {variable}. Valid variables: {', '.join(valid_vars)}"
+                        "message": f"Invalid variable: {var_str}. Valid variables: {', '.join(all_valid_vars)}"
                     }), 400
 
-                # Validate operator
                 valid_ops = ["==", "!=", "<", ">", "<=", ">="]
                 if operator not in valid_ops:
                     return jsonify({
@@ -489,34 +518,32 @@ def validate_rule():
                         "message": f"Invalid operator: {operator}. Valid operators: {', '.join(valid_ops)}"
                     }), 400
 
-                # Variable-specific validation
-                if variable == "muscle_group":
+                if var_str == "muscle_group":
                     if str_value not in get_valid_muscles():
                         return jsonify({
                             "status": "invalid",
                             "message": f"Invalid muscle group: {str_value}. Valid muscles: {', '.join(get_valid_muscles())}"
                         }), 400
 
-                elif variable == "goal":
+                elif var_str == "goal":
                     if str_value not in get_valid_goals():
                         return jsonify({
                             "status": "invalid",
                             "message": f"Invalid goal: {str_value}. Valid goals: {', '.join(get_valid_goals())}"
                         }), 400
 
-                elif variable == "fitness_level":
+                elif var_str == "fitness_level":
                     if str_value not in get_valid_levels():
                         return jsonify({
                             "status": "invalid",
                             "message": f"Invalid level: {str_value}. Valid levels: {', '.join(get_valid_levels())}"
                         }), 400
 
-                elif variable == "duration":
-                    # Handle duration validation (supports both raw numbers and Time objects)
+                elif var_str == "duration":
                     duration_minutes = None
                     if isinstance(value, int):
                         duration_minutes = value
-                    elif hasattr(value, 'minutes'):  # Time object from DSL
+                    elif hasattr(value, 'minutes'):
                         duration_minutes = value.minutes
                     elif isinstance(str_value, str) and str_value.endswith('m'):
                         try:
@@ -532,14 +559,13 @@ def validate_rule():
                             "message": "Duration must be in minutes (e.g., 30 or 30m)"
                         }), 400
 
-                    # Validate duration range (5 minutes to 3 hours)
                     if not (5 <= duration_minutes <= 180):
                         return jsonify({
                             "status": "invalid",
                             "message": "Duration must be between 5-180 minutes"
                         }), 400
 
-                elif variable == "age":
+                elif var_str == "age":
                     try:
                         age = int(str_value)
                         if not (15 <= age <= 100):
@@ -553,10 +579,8 @@ def validate_rule():
                             "message": "Age must be a number"
                         }), 400
 
-            # Validate action
             action = rule_def.action
             if hasattr(action, 'exercise'):
-                # Exercise inclusion action
                 exercise_name = action.exercise.strip('"') if isinstance(action.exercise, str) else str(action.exercise)
                 if exercise_name not in get_valid_exercises():
                     return jsonify({
@@ -567,7 +591,6 @@ def validate_rule():
                 serialized_rule["action"]["exercise"] = exercise_name
 
             elif hasattr(action, 'sets_count') and hasattr(action, 'reps_count'):
-                # Sets/reps action
                 if not (1 <= action.sets_count <= 10):
                     return jsonify({
                         "status": "invalid",
@@ -583,17 +606,16 @@ def validate_rule():
                 serialized_rule["action"]["reps_count"] = action.reps_count
 
             elif hasattr(action, 'min_time') and hasattr(action, 'max_time'):
-                # Rest time action
                 min_seconds = action.min_time.minutes * 60
                 max_seconds = action.max_time.minutes * 60
 
-                if not (30 <= min_seconds <= 300):  # 0.5-5 minutes
+                if not (30 <= min_seconds <= 300):
                     return jsonify({
                         "status": "invalid",
                         "message": "Minimum rest time must be between 30-300 seconds"
                     }), 400
 
-                if not (60 <= max_seconds <= 600):  # 1-10 minutes
+                if not (60 <= max_seconds <= 600):
                     return jsonify({
                         "status": "invalid",
                         "message": "Maximum rest time must be between 60-600 seconds"
@@ -627,9 +649,12 @@ def validate_rule():
             if any(ex in e.message for ex in get_valid_exercises()):
                 error_msg += f". Valid exercises: {', '.join(get_valid_exercises())}"
             elif "duration" in e.message:
-                error_msg += ". Duration must be in minutes (5-180) as number or with 'm' suffix (e.g., 30 or 30m)"
+                error_msg += ". Duration must be in minutes (5-180) as number or with 'm' suffix"
             elif "set_rest_time" in e.message:
-                error_msg += ". Format should be: 'set_rest_time min Xm max Ym' (e.g., 'set_rest_time min 1m max 2m')"
+                error_msg += ". Format: 'set_rest_time min Xm max Ym' (e.g., 'set_rest_time min 1m max 2m')"
+            elif "variable" in e.message.lower():
+                error_msg += f". Valid variables: {', '.join(all_valid_vars)}"
+
             return jsonify({
                 "status": "invalid",
                 "message": error_msg,
@@ -782,6 +807,7 @@ def get_datamodel():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route('/update-datamodel', methods=['POST'])
 def update_datamodel():
