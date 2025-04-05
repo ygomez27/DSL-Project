@@ -14,6 +14,7 @@ const RulesManager = ({ section }) => {
   });
 
   // Form state
+  const [conditions, setConditions] = useState([]);
   const [selectedVariable, setSelectedVariable] = useState('');
   const [selectedOperator, setSelectedOperator] = useState('');
   const [selectedValue, setSelectedValue] = useState('');
@@ -55,18 +56,13 @@ const RulesManager = ({ section }) => {
   const validateForm = () => {
     setError('');
 
-    if (!selectedVariable || !selectedOperator || !selectedValue || !selectedAction) {
-      setError('All fields marked with * are required');
+    if (conditions.length === 0) {
+      setError('At least one condition is required');
       return false;
     }
 
-    if (selectedVariable === 'duration' && isNaN(selectedValue)) {
-      setError('Duration must be a number');
-      return false;
-    }
-
-    if (selectedVariable === 'age' && (selectedValue < 15 || selectedValue > 100)) {
-      setError('Age must be between 15-100');
+    if (!selectedAction) {
+      setError('Action is required');
       return false;
     }
 
@@ -104,6 +100,29 @@ const RulesManager = ({ section }) => {
     return true;
   };
 
+  const addCondition = () => {
+    if (!selectedVariable || !selectedOperator || !selectedValue) {
+      setError('All condition fields are required');
+      return;
+    }
+
+    const newCondition = {
+      variable: selectedVariable,
+      operator: selectedOperator,
+      value: selectedValue
+    };
+
+    setConditions([...conditions, newCondition]);
+    setSelectedVariable('');
+    setSelectedOperator('');
+    setSelectedValue('');
+  };
+
+  const removeCondition = (index) => {
+    const updatedConditions = conditions.filter((_, i) => i !== index);
+    setConditions(updatedConditions);
+  };
+
   const addRule = async () => {
     if (!validateForm()) return;
 
@@ -114,20 +133,13 @@ const RulesManager = ({ section }) => {
         return id > maxId ? id : maxId;
       }, 0) + 1;
 
-      // Format value based on variable type
-      let formattedValue;
-      if (selectedVariable === 'muscle_group' || selectedVariable === 'goal') {
-        formattedValue = `"${selectedValue}"`;
-      } else if (selectedVariable === 'duration') {
-        formattedValue = `${selectedValue}m`;
-      } else if (selectedVariable === 'fitness_level') {
-        formattedValue = selectedValue;
-      } else {
-        formattedValue = isNaN(selectedValue) ? `"${selectedValue}"` : selectedValue;
-      }
+      // Format conditions
+      const formattedConditions = conditions.map(cond => {
+        const formattedValue = isNaN(cond.value) ? `"${cond.value}"` : cond.value;
+        return `${cond.variable} ${cond.operator} ${formattedValue}`;
+      }).join(' and ');
 
-      const condition = `${selectedVariable} ${selectedOperator} ${formattedValue}`;
-      
+      // Format action
       let action;
       if (selectedAction === 'include_exercise') {
         action = `include_exercise "${selectedExercise}"`;
@@ -137,11 +149,11 @@ const RulesManager = ({ section }) => {
         action = `set_rest_time min ${minRestTime / 60}m max ${maxRestTime / 60}m`;
       }
 
-      const ruleText = `rule Rule${nextRuleNumber} if ${condition} then ${action}`;
+      const ruleText = `rule Rule${nextRuleNumber} if ${formattedConditions} then ${action}`;
       console.log('Constructed Rule Text:', ruleText);
 
       setLoading(true);
-      
+
       // First validate the rule
       const validationResponse = await axios.post(
         'http://localhost:5000/validate-rule',
@@ -153,8 +165,8 @@ const RulesManager = ({ section }) => {
       }
 
       // If valid, save the rule
-      const saveResponse = await axios.post('http://localhost:5000/add-rule', { rule: ruleText });
-      
+      await axios.post('http://localhost:5000/add-rule', { rule: ruleText });
+
       // Refresh rules list
       const rulesResponse = await axios.get('http://localhost:5000/get-rules');
       setRules(rulesResponse.data.rules);
@@ -169,6 +181,7 @@ const RulesManager = ({ section }) => {
   };
 
   const resetForm = () => {
+    setConditions([]);
     setSelectedVariable('');
     setSelectedOperator('');
     setSelectedValue('');
@@ -271,11 +284,6 @@ const RulesManager = ({ section }) => {
       {error && (
         <div className="error-message">
           <strong>Error:</strong> {error}
-          {error.includes('exercise') && (
-            <div className="valid-exercises">
-              Valid exercises: {grammarOptions.exercise_names.join(', ')}
-            </div>
-          )}
         </div>
       )}
 
@@ -335,6 +343,21 @@ const RulesManager = ({ section }) => {
               />
             )}
           </div>
+          <button onClick={addCondition}>Add Condition</button>
+        </div>
+
+        <div className="conditions-list">
+          <h4>Conditions:</h4>
+          {conditions.length === 0 ? (
+            <p>No conditions added</p>
+          ) : (
+            conditions.map((cond, index) => (
+              <div key={index} className="condition-item">
+                <span>{cond.variable} {cond.operator} {cond.value}</span>
+                <button onClick={() => removeCondition(index)}>Remove</button>
+              </div>
+            ))
+          )}
         </div>
 
         <div className="action-section">

@@ -1,3 +1,4 @@
+from MySQLdb import IntegrityError
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_mysqldb import MySQL
@@ -27,18 +28,6 @@ app.config['MYSQL_DB'] = 'workout_dsl'
 app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 
 mysql = MySQL(app)
-
-# Constants
-VALID_EXERCISES = [
-    "Lat Pulldown", "Bent-over Rows", "Deadlifts", "Squats", "Lunges",
-    "Push-up", "Bench Press", "Incline Dumbbell Press", "Chest Flys",
-    "Overhead Press", "Lateral Raises", "Bicep Curls", "Triceps Dips",
-    "Burpees", "Dumbbell Row", "Leg Press"
-]
-
-VALID_GOAL_TYPES = ["Muscle Gain", "Fat Loss", "Strength", "Endurance"]
-VALID_MUSCLES = ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Full Body", "Dorsales"]
-VALID_LEVELS = ["Beginner", "Intermediate", "Advanced"]
 
 # DSL Grammar Definition
 DSL_GRAMMAR = """
@@ -142,7 +131,7 @@ Level:
 ;
 
 Action:
-    ExerciseAction | SetsRepsAction
+    ExerciseAction | SetsRepsAction | RestTimeAction
 ;
 
 ExerciseAction:
@@ -209,6 +198,59 @@ def serialize_rule(rule_id):
         return None
 
 
+def get_valid_values(table_name):
+    try:
+        with get_cursor() as cur:
+            cur.execute(f"SELECT name FROM {table_name}")
+            return [row['name'] for row in cur.fetchall()]
+    except Exception as e:
+        app.logger.error(f"Error fetching {table_name}: {str(e)}")
+        return []
+
+
+@app.route('/init-db', methods=['POST'])
+def initialize_db():
+    default_data = {
+        'valid_exercises': [
+            "Lat Pulldown", "Bent-over Rows", "Deadlifts", "Squats", "Lunges",
+            "Push-up", "Bench Press", "Incline Dumbbell Press", "Chest Flys",
+            "Overhead Press", "Lateral Raises", "Bicep Curls", "Triceps Dips",
+            "Burpees", "Dumbbell Row", "Leg Press"
+        ],
+        'valid_goals': ["Muscle Gain", "Fat Loss", "Strength", "Endurance"],
+        'valid_muscles': ["Chest", "Back", "Legs", "Shoulders", "Arms", "Core", "Full Body", "Dorsales"],
+        'valid_levels': ["Beginner", "Intermediate", "Advanced"]
+    }
+
+    try:
+        with get_cursor() as cur:
+            for table, values in default_data.items():
+                for value in values:
+                    try:
+                        cur.execute(f"INSERT INTO {table} (name) VALUES (%s)", (value,))
+                    except IntegrityError:
+                        pass  # Ignore duplicates
+            return jsonify({"status": "success", "message": "Database initialized"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def get_valid_exercises():
+    return get_valid_values('valid_exercises')
+
+
+def get_valid_goals():
+    return get_valid_values('valid_goals')
+
+
+def get_valid_muscles():
+    return get_valid_values('valid_muscles')
+
+
+def get_valid_levels():
+    return get_valid_values('valid_levels')
+
+
 # Endpoints
 @app.route('/analyze-grammar', methods=['GET'])
 def analyze_grammar():
@@ -218,10 +260,10 @@ def analyze_grammar():
             "variables": ["muscle_group", "goal", "duration", "age", "fitness_level"],
             "operators": ["==", "!=", "<", ">", "<=", ">="],
             "actions": ["include_exercise", "sets", "set_rest_time"],
-            "exercise_names": VALID_EXERCISES,
-            "goal_types": VALID_GOAL_TYPES,
-            "levels": VALID_LEVELS,
-            "muscles": VALID_MUSCLES,
+            "exercise_names": get_valid_exercises(),
+            "goal_types": get_valid_goals(),
+            "levels": get_valid_levels(),
+            "muscles": get_valid_muscles(),
             "customizable_sr": True
         })
     except Exception as e:
@@ -283,8 +325,8 @@ def add_rule():
 
         except TextXSyntaxError as e:
             error_msg = f"Syntax error: {e.message}"
-            if any(ex in e.message for ex in VALID_EXERCISES):
-                error_msg += f". Valid exercises: {', '.join(VALID_EXERCISES)}"
+            if any(ex in e.message for ex in get_valid_exercises()):
+                error_msg += f". Valid exercises: {', '.join(get_valid_exercises())}"
             return jsonify({
                 "status": "invalid",
                 "message": error_msg,
@@ -314,11 +356,11 @@ def add_rule():
 
             if hasattr(action, 'exercise'):  # ExerciseAction
                 exercise_name = action.exercise.strip('"')  # Remove quotes
-                if exercise_name not in VALID_EXERCISES:
+                if exercise_name not in get_valid_exercises():
                     return jsonify({
                         "status": "invalid",
                         "message": f"Invalid exercise: {exercise_name}",
-                        "valid_exercises": VALID_EXERCISES
+                        "valid_exercises": get_valid_exercises()
                     }), 400
 
                 cur.execute("""
@@ -449,24 +491,24 @@ def validate_rule():
 
                 # Variable-specific validation
                 if variable == "muscle_group":
-                    if str_value not in VALID_MUSCLES:
+                    if str_value not in get_valid_muscles():
                         return jsonify({
                             "status": "invalid",
-                            "message": f"Invalid muscle group: {str_value}. Valid muscles: {', '.join(VALID_MUSCLES)}"
+                            "message": f"Invalid muscle group: {str_value}. Valid muscles: {', '.join(get_valid_muscles())}"
                         }), 400
 
                 elif variable == "goal":
-                    if str_value not in VALID_GOAL_TYPES:
+                    if str_value not in get_valid_goals():
                         return jsonify({
                             "status": "invalid",
-                            "message": f"Invalid goal: {str_value}. Valid goals: {', '.join(VALID_GOAL_TYPES)}"
+                            "message": f"Invalid goal: {str_value}. Valid goals: {', '.join(get_valid_goals())}"
                         }), 400
 
                 elif variable == "fitness_level":
-                    if str_value not in VALID_LEVELS:
+                    if str_value not in get_valid_levels():
                         return jsonify({
                             "status": "invalid",
-                            "message": f"Invalid level: {str_value}. Valid levels: {', '.join(VALID_LEVELS)}"
+                            "message": f"Invalid level: {str_value}. Valid levels: {', '.join(get_valid_levels())}"
                         }), 400
 
                 elif variable == "duration":
@@ -516,10 +558,10 @@ def validate_rule():
             if hasattr(action, 'exercise'):
                 # Exercise inclusion action
                 exercise_name = action.exercise.strip('"') if isinstance(action.exercise, str) else str(action.exercise)
-                if exercise_name not in VALID_EXERCISES:
+                if exercise_name not in get_valid_exercises():
                     return jsonify({
                         "status": "invalid",
-                        "message": f"Invalid exercise: {exercise_name}. Valid exercises: {', '.join(VALID_EXERCISES)}"
+                        "message": f"Invalid exercise: {exercise_name}. Valid exercises: {', '.join(get_valid_exercises())}"
                     }), 400
                 serialized_rule["action"]["type"] = "include_exercise"
                 serialized_rule["action"]["exercise"] = exercise_name
@@ -582,8 +624,8 @@ def validate_rule():
 
         except TextXSyntaxError as e:
             error_msg = f"Syntax error: {e.message}"
-            if any(ex in e.message for ex in VALID_EXERCISES):
-                error_msg += f". Valid exercises: {', '.join(VALID_EXERCISES)}"
+            if any(ex in e.message for ex in get_valid_exercises()):
+                error_msg += f". Valid exercises: {', '.join(get_valid_exercises())}"
             elif "duration" in e.message:
                 error_msg += ". Duration must be in minutes (5-180) as number or with 'm' suffix (e.g., 30 or 30m)"
             elif "set_rest_time" in e.message:
@@ -614,10 +656,10 @@ def add_exercise():
             }), 400
 
         exercise_name = data['name']
-        if exercise_name not in VALID_EXERCISES:
+        if exercise_name not in get_valid_exercises():
             return jsonify({
                 "status": "invalid",
-                "message": f"Invalid exercise name. Must be one of: {', '.join(VALID_EXERCISES)}"
+                "message": f"Invalid exercise name. Must be one of: {', '.join(get_valid_exercises())}"
             }), 400
 
         with get_cursor() as cur:
@@ -668,38 +710,197 @@ def add_exercise():
 def get_datamodel():
     try:
         with get_cursor() as cur:
-            # Get record types with attributes
+            # Get domain values
+            domain_tables = {
+                'valid_exercises': 'exercise_names',
+                'valid_goals': 'goal_types',
+                'valid_muscles': 'muscles',
+                'valid_levels': 'levels'
+            }
+            domain_values = {}
+            for table, key in domain_tables.items():
+                cur.execute(f"SELECT name FROM {table}")
+                domain_values[key] = [row['name'] for row in cur.fetchall()]
+
+            # Get record types
             cur.execute("""
-                SELECT rt.name AS type_name, a.name, a.type, a.initial_value
+                SELECT rt.id, rt.name, 
+                       a.id as attr_id, a.name as attr_name, 
+                       a.type as attr_type, a.initial_value
                 FROM record_types rt
                 LEFT JOIN attributes a ON rt.id = a.record_type_id
-                ORDER BY rt.name, a.id
+                ORDER BY rt.name, a.name
             """)
+            record_types = {}
+            for row in cur.fetchall():
+                if row['name'] not in record_types:
+                    record_types[row['name']] = {
+                        'id': row['id'],
+                        'attributes': []
+                    }
+                if row['attr_id']:
+                    record_types[row['name']]['attributes'].append({
+                        'id': row['attr_id'],
+                        'name': row['attr_name'],
+                        'type': row['attr_type'],
+                        'initial_value': row['initial_value']
+                    })
 
-            # ... rest of your original implementation ...
+            # Get records
+            records = []
+            cur.execute("""
+                SELECT r.id, r.record_type_id, rt.name as type_name,
+                       rv.attribute_id, a.name as attr_name, rv.value
+                FROM records r
+                JOIN record_types rt ON r.record_type_id = rt.id
+                LEFT JOIN record_values rv ON r.id = rv.record_id
+                LEFT JOIN attributes a ON rv.attribute_id = a.id
+                ORDER BY r.id
+            """)
+            current_record = None
+            for row in cur.fetchall():
+                if not current_record or current_record['id'] != row['id']:
+                    if current_record:
+                        records.append(current_record)
+                    current_record = {
+                        'id': row['id'],
+                        'type_id': row['record_type_id'],
+                        'type_name': row['type_name'],
+                        'values': {}
+                    }
+                if row['attr_name']:
+                    current_record['values'][row['attr_name']] = row['value']
+            if current_record:
+                records.append(current_record)
 
-            return jsonify({"status": "success", "record_types": record_types})
+            return jsonify({
+                "status": "success",
+                **domain_values,
+                "record_types": record_types,
+                "records": records
+            })
 
     except Exception as e:
-        app.logger.error(f"Data model error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route('/update-datamodel', methods=['POST'])
 def update_datamodel():
     try:
         data = request.get_json()
-        record_type = data['record_type']
-        attribute = data['attribute']
+        action = data.get('action')
+        payload = data.get('payload')
+
+        if not action or not payload:
+            return jsonify({"status": "error", "message": "Action and payload required"}), 400
 
         with get_cursor() as cur:
-            # ... your original implementation ...
+            if action == 'add_valid_entry':
+                table_map = {
+                    'exercise': 'valid_exercises',
+                    'goal': 'valid_goals',
+                    'muscle': 'valid_muscles',
+                    'level': 'valid_levels'
+                }
+                entry_type = payload.get('type')
+                entry_name = payload.get('name')
 
-            return jsonify({"status": "success"})
+                if not entry_type or not entry_name:
+                    return jsonify({"status": "error", "message": "Type and name required"}), 400
+
+                table = table_map.get(entry_type)
+                if not table:
+                    return jsonify({"status": "error", "message": "Invalid type"}), 400
+
+                try:
+                    cur.execute(f"INSERT INTO {table} (name) VALUES (%s)", (entry_name,))
+                    return jsonify({"status": "success", "message": f"{entry_type} added"})
+                except IntegrityError:
+                    return jsonify({"status": "error", "message": "Entry exists"}), 400
+
+            elif action == 'add_record_type':
+                type_name = payload.get('name')
+                if not type_name:
+                    return jsonify({"status": "error", "message": "Name required"}), 400
+
+                cur.execute("INSERT INTO record_types (name) VALUES (%s)", (type_name,))
+                type_id = cur.lastrowid
+                return jsonify({
+                    "status": "success",
+                    "message": "Record type added",
+                    "type_id": type_id
+                })
+
+            elif action == 'add_attribute':
+                type_id = payload.get('type_id')
+                attr_name = payload.get('name')
+                attr_type = payload.get('type')
+
+                if not all([type_id, attr_name, attr_type]):
+                    return jsonify({"status": "error", "message": "Missing fields"}), 400
+
+                cur.execute("""
+                    INSERT INTO attributes 
+                    (record_type_id, name, type, initial_value)
+                    VALUES (%s, %s, %s, %s)
+                """, (type_id, attr_name, attr_type, payload.get('initial_value', '')))
+                return jsonify({"status": "success", "message": "Attribute added"})
+
+            elif action == 'add_record':
+                type_id = payload.get('type_id')
+                if not type_id:
+                    return jsonify({"status": "error", "message": "Type ID required"}), 400
+
+                cur.execute("INSERT INTO records (record_type_id) VALUES (%s)", (type_id,))
+                record_id = cur.lastrowid
+
+                for attr_name, value in payload.get('values', {}).items():
+                    cur.execute("""
+                        SELECT id FROM attributes 
+                        WHERE record_type_id = %s AND name = %s
+                    """, (type_id, attr_name))
+                    attr = cur.fetchone()
+                    if attr:
+                        cur.execute("""
+                            INSERT INTO record_values 
+                            (record_id, attribute_id, value)
+                            VALUES (%s, %s, %s)
+                        """, (record_id, attr['id'], str(value)))
+
+                return jsonify({
+                    "status": "success",
+                    "message": "Record added",
+                    "record_id": record_id
+                })
+
+            elif action == 'update_record':
+                record_id = payload.get('record_id')
+                if not record_id:
+                    return jsonify({"status": "error", "message": "Record ID required"}), 400
+
+                for attr_name, value in payload.get('values', {}).items():
+                    cur.execute("""
+                        UPDATE record_values rv
+                        JOIN attributes a ON rv.attribute_id = a.id
+                        SET rv.value = %s
+                        WHERE rv.record_id = %s AND a.name = %s
+                    """, (str(value), record_id, attr_name))
+
+                return jsonify({"status": "success", "message": "Record updated"})
+
+            elif action == 'delete_record':
+                record_id = payload.get('record_id')
+                if not record_id:
+                    return jsonify({"status": "error", "message": "Record ID required"}), 400
+
+                cur.execute("DELETE FROM record_values WHERE record_id = %s", (record_id,))
+                cur.execute("DELETE FROM records WHERE id = %s", (record_id,))
+                return jsonify({"status": "success", "message": "Record deleted"})
+
+            else:
+                return jsonify({"status": "error", "message": "Invalid action"}), 400
 
     except Exception as e:
-        app.logger.error(f"Update datamodel error: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 400
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 if __name__ == '__main__':
