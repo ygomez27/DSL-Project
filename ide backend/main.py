@@ -2,6 +2,7 @@ from MySQLdb import IntegrityError
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_mysqldb import MySQL
+from textx.export import metamodel_export
 from textx import metamodel_from_str, TextXSyntaxError
 import logging
 from contextlib import contextmanager
@@ -156,6 +157,7 @@ RestTimeAction:
 
 metamodel = metamodel_from_str(DSL_GRAMMAR)
 
+metamodel_export(metamodel, 'workout_dsl_ast.dot')
 
 # Helper Functions
 @contextmanager

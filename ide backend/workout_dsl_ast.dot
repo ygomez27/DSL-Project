@@ -1,0 +1,105 @@
+
+    digraph textX {
+    fontname = "Bitstream Vera Sans"
+    fontsize = 8
+    node[
+        shape=record,
+        style=filled,
+        fillcolor=aliceblue
+    ]
+    nodesep = 0.3
+    edge[dir=black,arrowtail=empty]
+
+
+1886787571056[ label="{Program|}"]
+
+1886787558992[ label="{*WorkoutDefinition|}"]
+
+1886787563152[ label="{WorkoutDay|}"]
+
+1886787586816[ label="{MuscleGroup|muscles: list[Muscle]\l}"]
+
+1886787459808[ label="{Goal|goal_type: GoalType\l}"]
+
+1886787141200[ label="{Duration|}"]
+
+1886787139408[ label="{Time|minutes: INT\l}"]
+
+1886787392992[ label="{*ExerciseDefinition|}"]
+
+1886787474544[ label="{Exercise|}"]
+
+1886787475888[ label="{Sets|count: INT\l}"]
+
+1886787312832[ label="{Repetitions|count: INT\l}"]
+
+1886786190416[ label="{RestPeriod|}"]
+
+1886787601808[ label="{RuleDefinition|}"]
+
+1886787538096[ label="{RuleName|number: INT\l}"]
+
+1886787539328[ label="{Condition|}"]
+
+1886787843440[ label="{ConditionExpr|operator: Operator\lvalue: Value\l}"]
+
+1886787843600[ label="{*Variable|}"]
+
+1886787864272[ label="{RecordVariable|}"]
+
+1886787876688[ label="{*Action|}"]
+
+1886787876816[ label="{ExerciseAction|exercise: STRING\l}"]
+
+1886787876944[ label="{SetsRepsAction|sets_count: INT\lreps_count: INT\l}"]
+
+1886787877072[ label="{RestTimeAction|}"]
+
+
+
+1886787571056 -> 1886787558992[arrowtail=diamond, dir=both, headlabel="workout_definitions 1..*"]
+1886787571056 -> 1886787601808[arrowtail=diamond, dir=both, headlabel="rule_definitions 1..*"]
+1886787558992 -> 1886787563152 [dir=back]
+1886787141200 -> 1886787139408[arrowtail=diamond, dir=both, headlabel="time "]
+1886787392992 -> 1886787474544 [dir=back]
+1886786190416 -> 1886787139408[arrowtail=diamond, dir=both, headlabel="time "]
+1886787601808 -> 1886787538096[arrowtail=diamond, dir=both, headlabel="name "]
+1886787601808 -> 1886787539328[arrowtail=diamond, dir=both, headlabel="condition "]
+1886787601808 -> 1886787876688[arrowtail=diamond, dir=both, headlabel="action "]
+1886787539328 -> 1886787843440[arrowtail=diamond, dir=both, headlabel="conditions 1..*"]
+1886787843440 -> 1886787843600[arrowtail=diamond, dir=both, headlabel="variable "]
+1886787843600 -> 1886787864272 [dir=back]
+1886787876688 -> 1886787876816 [dir=back]
+1886787876688 -> 1886787876944 [dir=back]
+1886787876688 -> 1886787877072 [dir=back]
+1886787877072 -> 1886787139408[arrowtail=diamond, dir=both, headlabel="min_time "]
+1886787877072 -> 1886787139408[arrowtail=diamond, dir=both, headlabel="max_time "]
+match_rules [ shape=plaintext, label=< <table>
+	<tr>
+		<td><b>DayOfWeek</b></td><td>Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday</td>
+	</tr>
+	<tr>
+		<td><b>GenerateRoutine</b></td><td>generate_routine</td>
+	</tr>
+	<tr>
+		<td><b>GoalType</b></td><td>Muscle Gain|Fat Loss|Strength|Endurance</td>
+	</tr>
+	<tr>
+		<td><b>Level</b></td><td>Beginner|Intermediate|Advanced</td>
+	</tr>
+	<tr>
+		<td><b>Muscle</b></td><td>Chest|Back|Legs|Shoulders|Arms|Core|Full Body|Dorsales</td>
+	</tr>
+	<tr>
+		<td><b>Operator</b></td><td>==|!=|&lt;|&gt;|&lt;=|&gt;=</td>
+	</tr>
+	<tr>
+		<td><b>SimpleVariable</b></td><td>muscle_group|goal|duration|age|fitness_level</td>
+	</tr>
+	<tr>
+		<td><b>Value</b></td><td>STRING|INT</td>
+	</tr>
+</table> >]
+
+
+}
