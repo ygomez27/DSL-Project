@@ -922,6 +922,31 @@ def update_datamodel():
                 cur.execute("DELETE FROM records WHERE id = %s", (record_id,))
                 return jsonify({"status": "success", "message": "Record deleted"})
 
+            elif action == 'update_attribute':
+                attr_id = payload.get('attribute_id')
+                new_name = payload.get('name')
+                new_type = payload.get('type')
+                new_initial_value = payload.get('initial_value')
+
+                if not all([attr_id, new_name, new_type]):
+                    return jsonify({"status": "error", "message": "Missing required fields"}), 400
+
+                # Check if attribute exists
+                cur.execute("SELECT * FROM attributes WHERE id = %s", (attr_id,))
+                if not cur.fetchone():
+                    return jsonify({"status": "error", "message": "Attribute not found"}), 404
+
+                # Update attribute
+                cur.execute("""
+                            UPDATE attributes
+                            SET name = %s,
+                                type = %s,
+                                initial_value = %s
+                            WHERE id = %s
+                        """, (new_name, new_type, new_initial_value, attr_id))
+
+                return jsonify({"status": "success", "message": "Attribute updated"})
+
             else:
                 return jsonify({"status": "error", "message": "Invalid action"}), 400
 

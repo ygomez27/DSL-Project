@@ -30,8 +30,16 @@ const DataModelManager = () => {
   const [expandedSections, setExpandedSections] = useState({
     validEntries: true,
     recordTypes: true,
-    records: true
+    records: true,
+    typeAttributes: true
   });
+  const [editAttributeForm, setEditAttributeForm] = useState({
+    name: '',
+    type: 'string',
+    initial_value: ''
+  });
+  const [editingAttribute, setEditingAttribute] = useState(null);
+  const [showAttributeModal, setShowAttributeModal] = useState(false);
 
   useEffect(() => {
     fetchDataModel();
@@ -145,6 +153,41 @@ const DataModelManager = () => {
     }
   };
 
+  const handleEditAttribute = async (attributeId) => {
+    try {
+      await axios.post('http://localhost:5000/update-datamodel', {
+        action: 'update_attribute',
+        payload: {
+          attribute_id: attributeId,
+          ...editAttributeForm
+        }
+      });
+      setSuccess('Attribute updated successfully');
+      setError('');
+      await fetchDataModel();
+      setEditingAttribute(null);
+      setShowAttributeModal(false);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update attribute');
+      setSuccess('');
+    }
+  };
+
+  const handleDeleteAttribute = async (attributeId) => {
+    try {
+      await axios.post('http://localhost:5000/update-datamodel', {
+        action: 'delete_attribute',
+        payload: { attribute_id: attributeId }
+      });
+      setSuccess('Attribute deleted successfully');
+      setError('');
+      await fetchDataModel();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to delete attribute');
+      setSuccess('');
+    }
+  };
+
   // Record Handlers
   const handleAddRecord = async () => {
     if (!selectedType) {
@@ -235,6 +278,12 @@ const DataModelManager = () => {
         onClick={() => setActiveTab('recordTypes')}
       >
         Record Types
+      </button>
+      <button
+        className={`tab ${activeTab === 'typeAttributes' ? 'active' : ''}`}
+        onClick={() => setActiveTab('typeAttributes')}
+      >
+        Type Attributes
       </button>
       <button
         className={`tab ${activeTab === 'records' ? 'active' : ''}`}
@@ -362,7 +411,6 @@ const DataModelManager = () => {
               <div key={typeName} className="type-card">
                 <div className="card-header">
                   <h3>{typeName}</h3>
-                  <button className="icon-btn danger">×</button>
                 </div>
                 <table className="attr-table">
                   <thead>
@@ -463,6 +511,126 @@ const DataModelManager = () => {
     );
   };
 
+  const renderTypeAttributes = () => (
+    <div className="section-card">
+      <div className="section-header" onClick={() => toggleSection('typeAttributes')}>
+        <h2>Type Attributes Management</h2>
+        <span>{expandedSections.typeAttributes ? '▼' : '▶'}</span>
+      </div>
+      {expandedSections.typeAttributes && (
+        <div className="attribute-management">
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Record Type</label>
+              <select
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                className="input-field"
+              >
+                <option value="">Select Record Type</option>
+                {Object.keys(dataModel.record_types).map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+  
+            <div className="form-group">
+              <label>Attribute Name</label>
+              <input
+                type="text"
+                value={newAttribute.name}
+                onChange={(e) => setNewAttribute({ ...newAttribute, name: e.target.value })}
+                className="input-field"
+                placeholder="Enter attribute name"
+              />
+            </div>
+  
+            <div className="form-group">
+              <label>Data Type</label>
+              <select
+                value={newAttribute.type}
+                onChange={(e) => setNewAttribute({ ...newAttribute, type: e.target.value })}
+                className="input-field"
+              >
+                <option value="string">String</option>
+                <option value="number">Number</option>
+                <option value="boolean">Boolean</option>
+              </select>
+            </div>
+  
+            <div className="form-group">
+              <label>Default Value</label>
+              <input
+                type="text"
+                value={newAttribute.initial_value}
+                onChange={(e) => setNewAttribute({ ...newAttribute, initial_value: e.target.value })}
+                className="input-field"
+                placeholder="Optional default value"
+              />
+            </div>
+          </div>
+  
+          <button
+            className="primary-btn"
+            onClick={handleAddAttribute}
+            disabled={!selectedType || !newAttribute.name.trim()}
+          >
+            Add Attribute
+          </button>
+  
+          {selectedType && dataModel.record_types[selectedType]?.attributes?.length > 0 && (
+            <div className="existing-attributes">
+              <h3>Current Attributes in {selectedType}</h3>
+              <table className="attr-table">
+                <thead>
+                  <tr>
+                    <th>Attribute</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dataModel.record_types[selectedType].attributes.map((attr, index) => (
+                    <tr key={attr.id || index}>
+                      <td>{attr.name}</td>
+                      <td>{attr.type}</td>
+                      <td>{attr.initial_value || '-'}</td>
+                      <td>
+                        <button
+                          className="icon-btn edit"
+                          onClick={() => {
+                            setEditingAttribute(attr.id);
+                            setEditAttributeForm({
+                              name: attr.name,
+                              type: attr.type,
+                              initial_value: attr.initial_value || ''
+                            });
+                            setShowAttributeModal(true);
+                          }}
+                          title="Edit attribute"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="icon-btn danger"
+                          onClick={() => handleDeleteAttribute(attr.id)}
+                          title="Delete attribute"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   const renderEditModal = () => (
     selectedRecord && (
       <div className="modal-overlay">
@@ -487,6 +655,75 @@ const DataModelManager = () => {
               Save Changes
             </button>
             <button className="primary-btn" onClick={() => setSelectedRecord(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  );
+
+  const renderAttributeModal = () => (
+    showAttributeModal && editingAttribute && (
+      <div className="modal-overlay">
+        <div className="edit-modal">
+          <h3>Edit Attribute</h3>
+          <div className="form-field">
+            <label>Attribute Name</label>
+            <input
+              type="text"
+              value={editAttributeForm.name}
+              onChange={(e) => setEditAttributeForm({ 
+                ...editAttributeForm, 
+                name: e.target.value 
+              })}
+              className="input-field"
+            />
+          </div>
+          <div className="form-field">
+            <label>Data Type</label>
+            <select
+              value={editAttributeForm.type}
+              onChange={(e) => setEditAttributeForm({ 
+                ...editAttributeForm, 
+                type: e.target.value 
+              })}
+              className="input-field"
+            >
+              <option value="string">String</option>
+              <option value="number">Number</option>
+              <option value="boolean">Boolean</option>
+            </select>
+          </div>
+          <div className="form-field">
+            <label>Default Value</label>
+            <input
+              type="text"
+              value={editAttributeForm.initial_value}
+              onChange={(e) => setEditAttributeForm({ 
+                ...editAttributeForm, 
+                initial_value: e.target.value 
+              })}
+              className="input-field"
+            />
+          </div>
+          <div className="form-actions">
+            <button 
+              className="primary-btn" 
+              onClick={() => {
+                handleEditAttribute(editingAttribute);
+                setShowAttributeModal(false);
+              }}
+            >
+              Save Changes
+            </button>
+            <button 
+              className="primary-btn" 
+              onClick={() => {
+                setShowAttributeModal(false);
+                setEditingAttribute(null);
+              }}
+            >
               Cancel
             </button>
           </div>
@@ -520,7 +757,6 @@ const DataModelManager = () => {
             <div className="record-interface">
               {renderRecordForm()}
               {renderRecordsTable()}
-              {renderEditModal()}
             </div>
           )}
         </>
@@ -540,8 +776,12 @@ const DataModelManager = () => {
       <div className="content-area">
         {activeTab === 'validEntries' && renderValidEntries()}
         {activeTab === 'recordTypes' && renderRecordTypes()}
+        {activeTab === 'typeAttributes' && renderTypeAttributes()}
         {activeTab === 'records' && renderRecordsManager()}
       </div>
+
+      {renderEditModal()}
+      {renderAttributeModal()}
     </div>
   );
 };
